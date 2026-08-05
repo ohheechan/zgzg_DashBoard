@@ -1,0 +1,65 @@
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+
+<h1 style="margin-top:0;">개요</h1>
+<p style="color:#6b7280; margin-top:-8px;">최근 14일간 방문자 수 / 신규 가입자 수 추이</p>
+
+<div id="status" style="color:#6b7280; padding: 40px 0; text-align:center;">데이터를 불러오는 중...</div>
+<div style="background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:20px; display:none;" id="chartWrap">
+  <canvas id="overviewChart" height="90"></canvas>
+</div>
+
+<script>
+  google.script.run
+    .withSuccessHandler(onData)
+    .withFailureHandler(onError)
+    .fetchOverviewData();
+
+  function onData(result) {
+    var statusEl = document.getElementById('status');
+    if (!result.ok) {
+      onError(result.error);
+      return;
+    }
+    statusEl.style.display = 'none';
+    document.getElementById('chartWrap').style.display = 'block';
+
+    var labels = result.daily.map(function (d) { return d.date.slice(5); }); // MM-DD
+    var activeUsers = result.daily.map(function (d) { return d.activeUsers; });
+    var newUsers = result.daily.map(function (d) { return d.newUsers; });
+
+    new Chart(document.getElementById('overviewChart'), {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: [
+          {
+            label: '방문자 수 (활성 사용자)',
+            data: activeUsers,
+            borderColor: '#2563eb',
+            backgroundColor: 'rgba(37,99,235,0.1)',
+            tension: 0.3,
+            fill: true,
+          },
+          {
+            label: '신규 가입자 수',
+            data: newUsers,
+            borderColor: '#f97316',
+            backgroundColor: 'rgba(249,115,22,0.1)',
+            tension: 0.3,
+            fill: true,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { position: 'bottom' } },
+        scales: { y: { beginAtZero: true } },
+      },
+    });
+  }
+
+  function onError(err) {
+    document.getElementById('status').innerHTML =
+      '⚠️ 데이터를 불러오지 못했습니다.<br><span style="font-size:12px;">' + err + '</span>';
+  }
+</script>
