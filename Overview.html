@@ -1,13 +1,14 @@
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
-
 <h1 style="margin-top:0;">개요</h1>
 <p style="color:#6b7280; margin-top:-8px;">최근 14일간 방문자 수 / 신규 가입자 수 추이</p>
 
 <div id="status" style="color:#6b7280; padding: 40px 0; text-align:center;">데이터를 불러오는 중...</div>
 <div style="background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:20px; display:none;" id="chartWrap">
-  <canvas id="overviewChart" height="90"></canvas>
+  <canvas id="overviewChart"></canvas>
+  <div style="display:flex; gap:20px; justify-content:center; margin-top:10px; font-size:13px; color:#374151;">
+    <span><span style="display:inline-block; width:10px; height:10px; border-radius:2px; background:#2563eb; margin-right:6px;"></span>방문자 수 (활성 사용자)</span>
+    <span><span style="display:inline-block; width:10px; height:10px; border-radius:2px; background:#f97316; margin-right:6px;"></span>신규 가입자 수</span>
+  </div>
 </div>
-<div id="fallbackTable" style="display:none; margin-top:16px;"></div>
 
 <script>
   google.script.run
@@ -27,81 +28,114 @@
       return;
     }
 
-    var labels = result.daily.map(function (d) { return d.date.slice(5); }); // MM-DD
-    var activeUsers = result.daily.map(function (d) { return d.activeUsers; });
-    var newUsers = result.daily.map(function (d) { return d.newUsers; });
+    statusEl.style.display = 'none';
+    document.getElementById('chartWrap').style.display = 'block';
 
-    var chartOk = false;
-    try {
-      if (typeof Chart === 'undefined') {
-        throw new Error('Chart.js 라이브러리를 불러오지 못했습니다 (CDN 로드 실패).');
-      }
-      statusEl.style.display = 'none';
-      document.getElementById('chartWrap').style.display = 'block';
-
-      new Chart(document.getElementById('overviewChart'), {
-        type: 'line',
-        data: {
-          labels: labels,
-          datasets: [
-            {
-              label: '방문자 수 (활성 사용자)',
-              data: activeUsers,
-              borderColor: '#2563eb',
-              backgroundColor: 'rgba(37,99,235,0.1)',
-              tension: 0.3,
-              fill: true,
-            },
-            {
-              label: '신규 가입자 수',
-              data: newUsers,
-              borderColor: '#f97316',
-              backgroundColor: 'rgba(249,115,22,0.1)',
-              tension: 0.3,
-              fill: true,
-            },
-          ],
-        },
-        options: {
-          responsive: true,
-          plugins: { legend: { position: 'bottom' } },
-          scales: { y: { beginAtZero: true } },
-        },
-      });
-      chartOk = true;
-    } catch (chartErr) {
-      console.error('Chart render failed:', chartErr);
-    }
-
-    // 차트 렌더링에 실패해도 숫자는 항상 볼 수 있도록 표 형태로 같이 보여줌
-    if (!chartOk) {
-      statusEl.style.display = 'none';
-      document.getElementById('chartWrap').style.display = 'none';
-    }
-    renderFallbackTable(result.daily, chartOk);
+    drawLineChart('overviewChart', result.daily);
   }
 
-  function renderFallbackTable(daily, chartOk) {
-    var el = document.getElementById('fallbackTable');
-    var rows = daily
-      .map(function (d) {
-        return '<tr><td style="padding:4px 12px;">' + d.date + '</td>' +
-          '<td style="padding:4px 12px; text-align:right;">' + d.activeUsers + '</td>' +
-          '<td style="padding:4px 12px; text-align:right;">' + d.newUsers + '</td></tr>';
-      })
-      .join('');
-    var note = chartOk
-      ? ''
-      : '<p style="color:#b45309; background:#fffbeb; border:1px solid #fde68a; border-radius:8px; padding:10px 14px; font-size:13px;">⚠️ 그래프 렌더링에 실패해서 표로 대신 보여드려요. (원인: Chart.js 로드 또는 렌더링 오류)</p>';
-    el.innerHTML =
-      note +
-      '<table style="border-collapse:collapse; width:100%; background:#fff; border:1px solid #e5e7eb; border-radius:12px; overflow:hidden;">' +
-      '<thead><tr style="background:#f3f4f6; text-align:left;">' +
-      '<th style="padding:6px 12px;">날짜</th><th style="padding:6px 12px; text-align:right;">방문자 수</th><th style="padding:6px 12px; text-align:right;">신규 가입자 수</th>' +
-      '</tr></thead><tbody>' +
-      rows +
-      '</tbody></table>';
-    el.style.display = 'block';
+  // 외부 라이브러리 없이 <canvas>에 직접 그리는 가벼운 라인 차트
+  // (Apps Script 배포 iframe의 CSP가 외부 CDN 스크립트 로드를 막는 경우가 있어,
+  //  의존성 없는 방식으로 구현함 — Chart.js 등 CDN 라이브러리를 쓰지 않음)
+  function drawLineChart(canvasId, daily) {
+    var canvas = document.getElementById(canvasId);
+    var dpr = window.devicePixelRatio || 1;
+    var cssWidth = canvas.parentElement.clientWidth;
+    var cssHeight = 320;
+    canvas.style.width = cssWidth + 'px';
+    canvas.style.height = cssHeight + 'px';
+    canvas.width = cssWidth * dpr;
+    canvas.height = cssHeight * dpr;
+    var ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+
+    var padding = { top: 16, right: 16, bottom: 28, left: 44 };
+    var plotW = cssWidth - padding.left - padding.right;
+    var plotH = cssHeight - padding.top - padding.bottom;
+
+    var labels = daily.map(function (d) { return d.date.slice(5); }); // MM-DD
+    var activeUsers = daily.map(function (d) { return d.activeUsers; });
+    var newUsers = daily.map(function (d) { return d.newUsers; });
+    var allValues = activeUsers.concat(newUsers);
+    var maxVal = Math.max.apply(null, allValues.concat([1]));
+    // y축 최대값을 보기 좋게 올림 (예: 583 -> 600)
+    var niceMax = niceCeil(maxVal);
+
+    function x(i) {
+      return padding.left + (daily.length === 1 ? plotW / 2 : (plotW * i) / (daily.length - 1));
+    }
+    function y(v) {
+      return padding.top + plotH - (plotH * v) / niceMax;
+    }
+
+    ctx.clearRect(0, 0, cssWidth, cssHeight);
+
+    // 그리드 라인 + y축 라벨
+    ctx.strokeStyle = '#e5e7eb';
+    ctx.fillStyle = '#9ca3af';
+    ctx.font = '11px -apple-system, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    var steps = 4;
+    for (var s = 0; s <= steps; s++) {
+      var v = (niceMax * s) / steps;
+      var yy = y(v);
+      ctx.beginPath();
+      ctx.moveTo(padding.left, yy);
+      ctx.lineTo(padding.left + plotW, yy);
+      ctx.stroke();
+      ctx.fillText(Math.round(v), padding.left - 8, yy);
+    }
+
+    // x축 라벨 (너무 많으면 일부만 표시)
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    var labelStep = Math.ceil(labels.length / 7);
+    labels.forEach(function (label, i) {
+      if (i % labelStep === 0 || i === labels.length - 1) {
+        ctx.fillText(label, x(i), padding.top + plotH + 8);
+      }
+    });
+
+    function drawSeries(values, color, fillColor) {
+      // 영역 채우기
+      ctx.beginPath();
+      ctx.moveTo(x(0), y(0));
+      values.forEach(function (v, i) { ctx.lineTo(x(i), y(v)); });
+      ctx.lineTo(x(values.length - 1), y(0));
+      ctx.closePath();
+      ctx.fillStyle = fillColor;
+      ctx.fill();
+
+      // 선
+      ctx.beginPath();
+      values.forEach(function (v, i) {
+        if (i === 0) ctx.moveTo(x(i), y(v));
+        else ctx.lineTo(x(i), y(v));
+      });
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // 점
+      values.forEach(function (v, i) {
+        ctx.beginPath();
+        ctx.arc(x(i), y(v), 2.5, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.fill();
+      });
+    }
+
+    drawSeries(activeUsers, '#2563eb', 'rgba(37,99,235,0.08)');
+    drawSeries(newUsers, '#f97316', 'rgba(249,115,22,0.08)');
+  }
+
+  function niceCeil(value) {
+    if (value <= 0) return 1;
+    var magnitude = Math.pow(10, Math.floor(Math.log10(value)));
+    var normalized = value / magnitude;
+    var niceNormalized = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+    return niceNormalized * magnitude;
   }
 
   function onError(err) {
