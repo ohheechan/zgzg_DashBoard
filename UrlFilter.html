@@ -1,0 +1,85 @@
+<h1 style="margin-top:0;">URL 필터</h1>
+<p style="color:#6b7280; margin-top:-8px;">특정 페이지 URL(경로)을 입력하면 최근 14일간 그 페이지로의 유입 수와 유입 경로를 보여줍니다.</p>
+
+<div style="background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:20px; display:flex; gap:8px;">
+  <input id="urlInput" type="text" placeholder="예: /recipe/123 또는 전체 URL 붙여넣기"
+    style="flex:1; padding:10px 12px; border:1px solid #d1d5db; border-radius:8px; font-size:14px;" />
+  <button id="searchBtn" style="padding:10px 18px; background:#2563eb; color:#fff; border:none; border-radius:8px; font-size:14px; cursor:pointer;">조회</button>
+</div>
+
+<div id="status" style="color:#6b7280; padding: 24px 0; text-align:center;"></div>
+
+<div id="result" style="display:none; margin-top:20px;">
+  <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:16px;">
+    <div style="background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:16px;">
+      <div style="color:#6b7280; font-size:13px;">유입 세션수</div>
+      <div id="statSessions" style="font-size:24px; font-weight:700; color:#111827; margin-top:4px;">-</div>
+    </div>
+    <div style="background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:16px;">
+      <div style="color:#6b7280; font-size:13px;">신규 사용자수</div>
+      <div id="statNewUsers" style="font-size:24px; font-weight:700; color:#111827; margin-top:4px;">-</div>
+    </div>
+    <div style="background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:16px;">
+      <div style="color:#6b7280; font-size:13px;">페이지뷰수</div>
+      <div id="statViews" style="font-size:24px; font-weight:700; color:#111827; margin-top:4px;">-</div>
+    </div>
+  </div>
+
+  <div style="background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:20px; margin-top:16px;">
+    <h3 style="margin-top:0; font-size:15px; color:#111827;">유입 채널 분석 (해당 페이지로 진입한 세션 기준)</h3>
+    <canvas id="sourceChart"></canvas>
+  </div>
+</div>
+
+<?!= include('Charts'); ?>
+<script>
+  var PALETTE = ['#2563eb', '#f97316', '#10b981', '#8b5cf6', '#ec4899', '#facc15', '#64748b'];
+
+  document.getElementById('searchBtn').addEventListener('click', runSearch);
+  document.getElementById('urlInput').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') runSearch();
+  });
+
+  function runSearch() {
+    var path = document.getElementById('urlInput').value.trim();
+    if (!path) return;
+    document.getElementById('result').style.display = 'none';
+    document.getElementById('status').textContent = '조회 중...';
+    google.script.run
+      .withSuccessHandler(onData)
+      .withFailureHandler(onError)
+      .fetchUrlFilterData(path, 14);
+  }
+
+  function onData(result) {
+    var statusEl = document.getElementById('status');
+    if (!result.ok) {
+      onError(result.error);
+      return;
+    }
+    if (!result.summary || result.summary.sessions === 0) {
+      statusEl.textContent = '최근 14일간 "' + result.path + '" 경로로의 유입 데이터가 없습니다.';
+      document.getElementById('result').style.display = 'none';
+      return;
+    }
+    statusEl.textContent = '';
+    document.getElementById('result').style.display = 'block';
+    document.getElementById('statSessions').textContent = formatNumber(result.summary.sessions);
+    document.getElementById('statNewUsers').textContent = formatNumber(result.summary.newUsers);
+    document.getElementById('statViews').textContent = formatNumber(result.summary.views);
+
+    if (result.channels && result.channels.length) {
+      drawHBarChart(
+        'sourceChart',
+        result.channels.map(function (c) { return c.channel; }),
+        result.channels.map(function (c) { return c.sessions; }),
+        '#2563eb'
+      );
+    }
+  }
+
+  function onError(err) {
+    document.getElementById('status').innerHTML =
+      '⚠️ 데이터를 불러오지 못했습니다.<br><span style="font-size:12px;">' + err + '</span>';
+  }
+</script>
