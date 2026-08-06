@@ -3,12 +3,21 @@
     <h1 style="margin:0;">개요</h1>
     <p style="color:#6b7280; margin-top:4px;" id="periodLabel">최근 14일간 방문자 수 / 신규 가입자 수 추이</p>
   </div>
-  <select id="rangeSelect" style="padding:8px 12px; border:1px solid #d1d5db; border-radius:8px; font-size:14px; background:#fff; color:#111827;">
-    <option value="7">최근 7일</option>
-    <option value="14" selected>최근 14일</option>
-    <option value="30">최근 30일</option>
-    <option value="90">최근 90일</option>
-  </select>
+  <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+    <select id="rangeSelect" style="padding:8px 12px; border:1px solid #d1d5db; border-radius:8px; font-size:14px; background:#fff; color:#111827;">
+      <option value="7">최근 7일</option>
+      <option value="14" selected>최근 14일</option>
+      <option value="30">최근 30일</option>
+      <option value="90">최근 90일</option>
+      <option value="custom">사용자 지정</option>
+    </select>
+    <div id="customRangeInputs" style="display:none; align-items:center; gap:6px;">
+      <input type="date" id="customStartDate" style="padding:7px 8px; border:1px solid #d1d5db; border-radius:8px; font-size:13px; color:#111827;">
+      <span style="color:#9ca3af; font-size:13px;">~</span>
+      <input type="date" id="customEndDate" style="padding:7px 8px; border:1px solid #d1d5db; border-radius:8px; font-size:13px; color:#111827;">
+      <button id="customRangeApply" style="padding:7px 14px; border:1px solid #2563eb; background:#2563eb; color:#fff; border-radius:8px; font-size:13px; cursor:pointer;">적용</button>
+    </div>
+  </div>
 </div>
 
 <div id="status" style="color:#6b7280; padding: 40px 0; text-align:center;">데이터를 불러오는 중...</div>
@@ -55,10 +64,33 @@
 <script>
   var PALETTE = ['#2563eb', '#f97316', '#10b981', '#8b5cf6', '#ec4899', '#facc15', '#64748b'];
   var chartState = null; // { points: [{x, date, activeUsers, newSignups}] } — hover/click 히트 테스트용
-  var currentRangeDays = 14; // 상세 패널의 "전체 기간 보기" 복귀에 사용
+  // 상세 패널의 "전체 기간 보기" 복귀 및 기간 재조회에 사용.
+  // { type: 'days', days: N } 또는 { type: 'custom', start: 'YYYY-MM-DD', end: 'YYYY-MM-DD' }
+  var currentRange = { type: 'days', days: 14 };
 
   document.getElementById('rangeSelect').addEventListener('change', function (e) {
-    loadOverview(Number(e.target.value));
+    var value = e.target.value;
+    if (value === 'custom') {
+      document.getElementById('customRangeInputs').style.display = 'inline-flex';
+      initCustomRangeDefaults();
+      return; // 시작일/종료일을 고르고 '적용'을 눌러야 조회됨
+    }
+    document.getElementById('customRangeInputs').style.display = 'none';
+    loadOverview({ type: 'days', days: Number(value) });
+  });
+
+  document.getElementById('customRangeApply').addEventListener('click', function () {
+    var start = document.getElementById('customStartDate').value;
+    var end = document.getElementById('customEndDate').value;
+    if (!start || !end) {
+      alert('시작일과 종료일을 모두 선택해주세요.');
+      return;
+    }
+    if (start > end) {
+      alert('시작일은 종료일보다 이전이어야 합니다.');
+      return;
+    }
+    loadOverview({ type: 'custom', start: start, end: end });
   });
 
   document.getElementById('detailClose').addEventListener('click', function () {
@@ -66,22 +98,50 @@
   });
 
   document.getElementById('detailBackToRange').addEventListener('click', function () {
-    loadRangeDetail(currentRangeDays);
+    loadRangeDetail(currentRange);
   });
 
-  loadOverview(14);
+  loadOverview(currentRange);
 
-  function loadOverview(days) {
-    currentRangeDays = days;
+  // 사용자 지정 옵션을 처음 선택했을 때 시작일/종료일 기본값(최근 14일)을 채워줌.
+  // 이미 값이 있으면(재선택 등) 유지함.
+  function initCustomRangeDefaults() {
+    var startInput = document.getElementById('customStartDate');
+    var endInput = document.getElementById('customEndDate');
+    if (startInput.value && endInput.value) return;
+    var today = new Date();
+    var twoWeeksAgo = new Date(today);
+    twoWeeksAgo.setDate(today.getDate() - 13);
+    endInput.value = formatDateLocal_(today);
+    startInput.value = formatDateLocal_(twoWeeksAgo);
+  }
+
+  function formatDateLocal_(date) {
+    var y = date.getFullYear();
+    var m = String(date.getMonth() + 1).padStart(2, '0');
+    var d = String(date.getDate()).padStart(2, '0');
+    return y + '-' + m + '-' + d;
+  }
+
+  // range: { type: 'days', days } 또는 { type: 'custom', start, end } 공통 표시 문구
+  function rangeLabel_(range) {
+    if (range.type === 'custom') return range.start + ' ~ ' + range.end;
+    return '최근 ' + range.days + '일간';
+  }
+
+  function loadOverview(range) {
+    currentRange = range;
     document.getElementById('status').style.display = 'block';
     document.getElementById('status').textContent = '데이터를 불러오는 중...';
     document.getElementById('chartWrap').style.display = 'none';
-    document.getElementById('periodLabel').textContent = '최근 ' + days + '일간 방문자 수 / 신규 가입자 수 추이';
+    document.getElementById('periodLabel').textContent = rangeLabel_(range) + ' 방문자 수 / 신규 가입자 수 추이';
 
-    google.script.run
-      .withSuccessHandler(onData)
-      .withFailureHandler(onError)
-      .fetchOverviewData(days);
+    var call = google.script.run.withSuccessHandler(onData).withFailureHandler(onError);
+    if (range.type === 'custom') {
+      call.fetchOverviewDataForRange(range.start, range.end);
+    } else {
+      call.fetchOverviewData(range.days);
+    }
   }
 
   function onData(result) {
@@ -103,7 +163,7 @@
     setupChartInteractivity();
 
     // 특정 날짜를 클릭하기 전, 기본으로 선택된 기간 전체의 가입 회원 요약을 보여줌
-    loadRangeDetail(currentRangeDays);
+    loadRangeDetail(currentRange);
   }
 
   // 외부 라이브러리 없이 <canvas>에 직접 그리는 가벼운 라인 차트
@@ -289,18 +349,20 @@
   }
 
   // 특정 날짜를 클릭하기 전 기본으로 보여주는, 선택된 기간 전체의 가입 회원 요약
-  function loadRangeDetail(days) {
+  function loadRangeDetail(range) {
     document.getElementById('detailPanel').style.display = 'block';
-    document.getElementById('detailTitle').textContent = '최근 ' + days + '일간 가입 회원 상세';
+    document.getElementById('detailTitle').textContent = rangeLabel_(range) + ' 가입 회원 상세';
     document.getElementById('detailBackToRange').style.display = 'none';
     document.getElementById('detailStatus').style.display = 'block';
     document.getElementById('detailStatus').textContent = '불러오는 중...';
     document.getElementById('detailContent').style.display = 'none';
 
-    google.script.run
-      .withSuccessHandler(onDetailData)
-      .withFailureHandler(onDetailError)
-      .fetchMemberBreakdownForRange(days);
+    var call = google.script.run.withSuccessHandler(onDetailData).withFailureHandler(onDetailError);
+    if (range.type === 'custom') {
+      call.fetchMemberBreakdownForCustomRange(range.start, range.end);
+    } else {
+      call.fetchMemberBreakdownForRange(range.days);
+    }
   }
 
   function onDetailData(result) {
