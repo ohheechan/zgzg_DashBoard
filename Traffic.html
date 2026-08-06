@@ -1,0 +1,89 @@
+<h1 style="margin-top:0;">트래픽 리포트</h1>
+<p style="color:#6b7280; margin-top:-8px;">최근 14일간 GA4 트래픽 데이터</p>
+
+<div id="status" style="color:#6b7280; padding: 40px 0; text-align:center;">데이터를 불러오는 중...</div>
+
+<div id="content" style="display:none;">
+  <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px;">
+    <div style="background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:20px;">
+      <h3 style="margin-top:0; font-size:15px; color:#111827;">유입 채널별 세션수</h3>
+      <canvas id="channelChart"></canvas>
+    </div>
+    <div style="background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:20px;">
+      <h3 style="margin-top:0; font-size:15px; color:#111827;">디바이스별 비중</h3>
+      <canvas id="deviceChart"></canvas>
+    </div>
+  </div>
+
+  <div style="background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:20px; margin-top:20px;">
+    <h3 style="margin-top:0; font-size:15px; color:#111827;">인기 페이지 TOP 10</h3>
+    <table style="width:100%; border-collapse:collapse; font-size:13px;">
+      <thead>
+        <tr style="text-align:left; color:#6b7280; border-bottom:1px solid #e5e7eb;">
+          <th style="padding:8px 4px;">페이지 경로</th>
+          <th style="padding:8px 4px; text-align:right;">조회수</th>
+        </tr>
+      </thead>
+      <tbody id="topPagesBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<?!= include('Charts'); ?>
+<script>
+  var PALETTE = ['#2563eb', '#f97316', '#10b981', '#8b5cf6', '#ec4899', '#facc15', '#64748b'];
+
+  google.script.run
+    .withSuccessHandler(onData)
+    .withFailureHandler(onError)
+    .fetchTrafficData();
+
+  function onData(result) {
+    var statusEl = document.getElementById('status');
+    if (!result.ok) {
+      onError(result.error);
+      return;
+    }
+    statusEl.style.display = 'none';
+    document.getElementById('content').style.display = 'block';
+
+    if (result.channels && result.channels.length) {
+      drawHBarChart(
+        'channelChart',
+        result.channels.map(function (c) { return c.channel; }),
+        result.channels.map(function (c) { return c.sessions; }),
+        '#2563eb'
+      );
+    }
+    if (result.devices && result.devices.length) {
+      drawDonutChart(
+        'deviceChart',
+        result.devices.map(function (d) { return d.device; }),
+        result.devices.map(function (d) { return d.sessions; }),
+        PALETTE
+      );
+    }
+
+    var tbody = document.getElementById('topPagesBody');
+    (result.topPages || []).forEach(function (p) {
+      var tr = document.createElement('tr');
+      tr.style.borderBottom = '1px solid #f3f4f6';
+      var tdPath = document.createElement('td');
+      tdPath.style.padding = '8px 4px';
+      tdPath.style.wordBreak = 'break-all';
+      tdPath.textContent = p.path;
+      var tdViews = document.createElement('td');
+      tdViews.style.padding = '8px 4px';
+      tdViews.style.textAlign = 'right';
+      tdViews.textContent = formatNumber(p.views);
+      tr.appendChild(tdPath);
+      tr.appendChild(tdViews);
+      tbody.appendChild(tr);
+    });
+  }
+
+  function onError(err) {
+    document.getElementById('status').innerHTML =
+      '⚠️ 데이터를 불러오지 못했습니다.<br><span style="font-size:12px;">' + err + '</span>';
+  }
+</script>
