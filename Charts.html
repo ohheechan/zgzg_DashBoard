@@ -1,0 +1,197 @@
+<script>
+  // 공통 캔버스 차트 유틸 (외부 CDN 라이브러리 없이 구현 — CSP 정책 때문, memory.md 참고)
+
+  function niceCeilShared(value) {
+    if (value <= 0) return 1;
+    var magnitude = Math.pow(10, Math.floor(Math.log10(value)));
+    var normalized = value / magnitude;
+    var niceNormalized = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+    return niceNormalized * magnitude;
+  }
+
+  function formatNumber(n) {
+    return Number(n || 0).toLocaleString('ko-KR');
+  }
+
+  function roundRect(ctx, x, y, w, h, r) {
+    if (w < r * 2) r = Math.max(0, w / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  // 가로 막대 차트: labels/values 배열 (순서 그대로 위에서부터 표시)
+  function drawHBarChart(canvasId, labels, values, color) {
+    var canvas = document.getElementById(canvasId);
+    if (!canvas || !labels.length) return;
+    var dpr = window.devicePixelRatio || 1;
+    var cssWidth = canvas.parentElement.clientWidth;
+    var barHeight = 26;
+    var barGap = 12;
+    var cssHeight = labels.length * (barHeight + barGap) + barGap;
+    canvas.style.width = cssWidth + 'px';
+    canvas.style.height = cssHeight + 'px';
+    canvas.width = cssWidth * dpr;
+    canvas.height = cssHeight * dpr;
+    var ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, cssWidth, cssHeight);
+
+    var labelWidth = 120;
+    var valueWidth = 60;
+    var plotW = Math.max(20, cssWidth - labelWidth - valueWidth);
+    var maxVal = Math.max.apply(null, values.concat([1]));
+    var niceMax = niceCeilShared(maxVal);
+
+    ctx.font = '12px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.textBaseline = 'middle';
+
+    labels.forEach(function (label, i) {
+      var y = barGap + i * (barHeight + barGap);
+      var w = Math.max(2, (plotW * values[i]) / niceMax);
+
+      ctx.textAlign = 'right';
+      ctx.fillStyle = '#374151';
+      var trimmed = String(label).length > 15 ? String(label).slice(0, 14) + '…' : String(label);
+      ctx.fillText(trimmed, labelWidth - 10, y + barHeight / 2);
+
+      ctx.fillStyle = color;
+      roundRect(ctx, labelWidth, y, w, barHeight, 4);
+      ctx.fill();
+
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#111827';
+      ctx.fillText(formatNumber(values[i]), labelWidth + w + 8, y + barHeight / 2);
+    });
+  }
+
+  // 단일 시리즈 라인+영역 차트 (예: 최근 30일 일별 신규가입자 추이)
+  function drawAreaLineChart(canvasId, labels, values, color, fillColor) {
+    var canvas = document.getElementById(canvasId);
+    if (!canvas || !labels.length) return;
+    var dpr = window.devicePixelRatio || 1;
+    var cssWidth = canvas.parentElement.clientWidth;
+    var cssHeight = 220;
+    canvas.style.width = cssWidth + 'px';
+    canvas.style.height = cssHeight + 'px';
+    canvas.width = cssWidth * dpr;
+    canvas.height = cssHeight * dpr;
+    var ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, cssWidth, cssHeight);
+
+    var padding = { top: 16, right: 16, bottom: 24, left: 36 };
+    var plotW = cssWidth - padding.left - padding.right;
+    var plotH = cssHeight - padding.top - padding.bottom;
+    var niceMax = niceCeilShared(Math.max.apply(null, values.concat([1])));
+
+    function x(i) {
+      return padding.left + (values.length === 1 ? plotW / 2 : (plotW * i) / (values.length - 1));
+    }
+    function y(v) {
+      return padding.top + plotH - (plotH * v) / niceMax;
+    }
+
+    ctx.strokeStyle = '#e5e7eb';
+    ctx.fillStyle = '#9ca3af';
+    ctx.font = '11px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    var steps = 4;
+    for (var s = 0; s <= steps; s++) {
+      var v = (niceMax * s) / steps;
+      var yy = y(v);
+      ctx.beginPath();
+      ctx.moveTo(padding.left, yy);
+      ctx.lineTo(padding.left + plotW, yy);
+      ctx.stroke();
+      ctx.fillText(Math.round(v), padding.left - 8, yy);
+    }
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    var labelStep = Math.ceil(labels.length / 7);
+    labels.forEach(function (label, i) {
+      if (i % labelStep === 0 || i === labels.length - 1) {
+        ctx.fillText(label, x(i), padding.top + plotH + 6);
+      }
+    });
+
+    ctx.beginPath();
+    ctx.moveTo(x(0), y(0));
+    values.forEach(function (v, i) { ctx.lineTo(x(i), y(v)); });
+    ctx.lineTo(x(values.length - 1), y(0));
+    ctx.closePath();
+    ctx.fillStyle = fillColor;
+    ctx.fill();
+
+    ctx.beginPath();
+    values.forEach(function (v, i) {
+      if (i === 0) ctx.moveTo(x(i), y(v));
+      else ctx.lineTo(x(i), y(v));
+    });
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+
+  // 도넛 차트: labels/values/colors 배열, 가운데 합계 표시 + 우측 범례
+  function drawDonutChart(canvasId, labels, values, colors) {
+    var canvas = document.getElementById(canvasId);
+    if (!canvas || !labels.length) return;
+    var dpr = window.devicePixelRatio || 1;
+    var cssWidth = canvas.parentElement.clientWidth;
+    var cssHeight = 200;
+    canvas.style.width = cssWidth + 'px';
+    canvas.style.height = cssHeight + 'px';
+    canvas.width = cssWidth * dpr;
+    canvas.height = cssHeight * dpr;
+    var ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, cssWidth, cssHeight);
+
+    var total = values.reduce(function (a, b) { return a + b; }, 0) || 1;
+    var cx = 85, cy = cssHeight / 2, rOuter = 65, rInner = 40;
+    var start = -Math.PI / 2;
+
+    values.forEach(function (v, i) {
+      var angle = (v / total) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.arc(cx, cy, rOuter, start, start + angle);
+      ctx.closePath();
+      ctx.fillStyle = colors[i % colors.length];
+      ctx.fill();
+      start += angle;
+    });
+
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.beginPath();
+    ctx.arc(cx, cy, rInner, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+
+    ctx.fillStyle = '#111827';
+    ctx.font = 'bold 15px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(formatNumber(total), cx, cy);
+
+    var legendX = cx + rOuter + 20;
+    var legendY = cy - (labels.length * 22) / 2 + 11;
+    ctx.font = '13px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.textAlign = 'left';
+    labels.forEach(function (label, i) {
+      var y = legendY + i * 22;
+      ctx.fillStyle = colors[i % colors.length];
+      ctx.fillRect(legendX, y - 6, 12, 12);
+      ctx.fillStyle = '#374151';
+      var pct = total ? Math.round((values[i] / total) * 100) : 0;
+      ctx.fillText(label + ' (' + pct + '%)', legendX + 18, y);
+    });
+  }
+</script>
