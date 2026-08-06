@@ -274,6 +274,31 @@ function getSignupCountsByDate_(days) {
   return trendMap;
 }
 
+// 사용자 지정 기간(시작일~종료일, 둘 다 포함)의 날짜별 실제 가입자 수 맵 반환
+// ({ 'YYYY-MM-DD': count, ... }) — getSignupCountsByDate_(days)의 사용자 지정 기간 버전
+function getSignupCountsForDateRange_(startDate, endDate) {
+  const rows = readMemberRows_();
+  const trendMap = {};
+  const cursor = parseDate_(startDate);
+  const end = parseDate_(endDate);
+  if (!cursor || !end) return trendMap;
+  cursor.setHours(0, 0, 0, 0);
+  end.setHours(0, 0, 0, 0);
+  while (cursor <= end) {
+    trendMap[formatDate_(cursor)] = 0;
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  for (let i = 0; i < rows.totalMembers; i++) {
+    const signupDate = parseDate_(rows.signupDates[i][0]);
+    if (!signupDate) continue;
+    const key = formatDate_(signupDate);
+    if (key in trendMap) trendMap[key] += 1;
+  }
+
+  return trendMap;
+}
+
 // 특정 날짜(YYYY-MM-DD)에 가입한 회원들의 성별/연령대/가입경로 분석
 function getMemberBreakdownForDate_(dateStr) {
   const rows = readMemberRows_();
@@ -370,6 +395,70 @@ function getMemberBreakdownForRange_(days) {
 function fetchMemberBreakdownForRange(days) {
   try {
     return getMemberBreakdownForRange_(days || 14);
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+}
+
+// 사용자 지정 기간(시작일~종료일, 둘 다 포함) 동안 가입한 회원 전체의
+// 성별/연령대/가입경로 분석 - getMemberBreakdownForRange_(days)의 사용자 지정 기간 버전
+function getMemberBreakdownForCustomRange_(startDate, endDate) {
+  const rows = readMemberRows_();
+  const genderCount = {};
+  const ageGroupCount = {};
+  const channelCount = {};
+  let count = 0;
+  const today = new Date();
+
+  const startCutoff = parseDate_(startDate);
+  const endCutoff = parseDate_(endDate);
+  if (!startCutoff || !endCutoff) {
+    throw new Error('시작일 또는 종료일 형식이 올바르지 않습니다.');
+  }
+  startCutoff.setHours(0, 0, 0, 0);
+  endCutoff.setHours(23, 59, 59, 999);
+
+  for (let i = 0; i < rows.totalMembers; i++) {
+    const signupDate = parseDate_(rows.signupDates[i][0]);
+    if (!signupDate || signupDate < startCutoff || signupDate > endCutoff) continue;
+    count++;
+
+    const gender = String(rows.genders[i][0] || '').trim();
+    if (gender) genderCount[gender] = (genderCount[gender] || 0) + 1;
+
+    const birthDate = parseDate_(rows.birthdates[i][0]);
+    if (birthDate) {
+      const ageGroup = ageGroupOf_(birthDate, today);
+      ageGroupCount[ageGroup] = (ageGroupCount[ageGroup] || 0) + 1;
+    }
+
+    const channel = String(rows.signupChannels[i][0] || '').trim() || '기타';
+    channelCount[channel] = (channelCount[channel] || 0) + 1;
+  }
+
+  const summary = summarizeCounts_(genderCount, ageGroupCount, channelCount);
+
+  return {
+    ok: true,
+    startDate: startDate,
+    endDate: endDate,
+    count: count,
+    genders: summary.genderList,
+    ageGroups: summary.ageGroupList,
+    channels: summary.channelList,
+  };
+}
+
+// 개요 탭 - 사용자 지정 기간 조회 시 클라이언트가 호출하는 진입점
+function fetchMemberBreakdownForCustomRange(startDate, endDate) {
+  try {
+    if (!startDate || !endDate) {
+      throw new Error('시작일과 종료일을 모두 지정해야 합니다.');
+    }
+    if (startDate > endDate) {
+      throw new Error('시작일은 종료일보다 이전이어야 합니다.');
+    }
+    return getMemberBreakdownForCustomRange_(startDate, endDate);
   } catch (err) {
     return { ok: false, error: String(err) };
   }
