@@ -1,0 +1,103 @@
+<div style="display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+  <h1 style="margin:0;">회원 리포트</h1>
+  <span id="lastUpdatedBadge" style="font-size:12px; color:#6b7280; background:#f3f4f6; padding:4px 10px; border-radius:999px;"></span>
+</div>
+<p style="color:#6b7280; margin-top:4px;">회원DB 시트를 기준으로 집계합니다. 트랙B(회원DB 자동화) 완료 전까지는 수동으로 갱신되는 시트입니다.</p>
+
+<div id="status" style="color:#6b7280; padding: 40px 0; text-align:center;">데이터를 불러오는 중...</div>
+
+<div id="content" style="display:none;">
+  <div style="background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:20px; margin-bottom:20px; display:inline-block;">
+    <div style="color:#6b7280; font-size:13px;">총 회원수</div>
+    <div id="totalMembers" style="font-size:28px; font-weight:700; color:#111827; margin-top:4px;">-</div>
+  </div>
+
+  <div style="background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:20px; margin-bottom:20px;">
+    <h3 style="margin-top:0; font-size:15px; color:#111827;">최근 30일 가입 추이</h3>
+    <canvas id="signupTrendChart"></canvas>
+  </div>
+
+  <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px;">
+    <div style="background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:20px;">
+      <h3 style="margin-top:0; font-size:15px; color:#111827;">성별</h3>
+      <canvas id="genderChart"></canvas>
+    </div>
+    <div style="background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:20px;">
+      <h3 style="margin-top:0; font-size:15px; color:#111827;">연령대</h3>
+      <canvas id="ageChart"></canvas>
+    </div>
+  </div>
+
+  <div style="background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:20px; margin-top:20px;">
+    <h3 style="margin-top:0; font-size:15px; color:#111827;">가입 경로</h3>
+    <canvas id="channelChart"></canvas>
+  </div>
+</div>
+
+<?!= include('Charts'); ?>
+<script>
+  var PALETTE = ['#2563eb', '#f97316', '#10b981', '#8b5cf6', '#ec4899', '#facc15', '#64748b'];
+
+  google.script.run
+    .withSuccessHandler(onData)
+    .withFailureHandler(onError)
+    .fetchMembersData();
+
+  function onData(result) {
+    var statusEl = document.getElementById('status');
+    if (!result.ok) {
+      onError(result.error);
+      return;
+    }
+    statusEl.style.display = 'none';
+    document.getElementById('content').style.display = 'block';
+
+    document.getElementById('totalMembers').textContent = formatNumber(result.totalMembers);
+    var badge = document.getElementById('lastUpdatedBadge');
+    badge.textContent = result.lastSignupAt
+      ? '시트 내 최신 가입일 기준: ' + result.lastSignupAt
+      : '가입일시 데이터 없음';
+
+    if (result.signupTrend && result.signupTrend.length) {
+      drawAreaLineChart(
+        'signupTrendChart',
+        result.signupTrend.map(function (d) { return d.date.slice(5); }),
+        result.signupTrend.map(function (d) { return d.count; }),
+        '#2563eb',
+        'rgba(37,99,235,0.08)'
+      );
+    }
+
+    if (result.genders && result.genders.length) {
+      drawDonutChart(
+        'genderChart',
+        result.genders.map(function (g) { return g.label; }),
+        result.genders.map(function (g) { return g.count; }),
+        PALETTE
+      );
+    }
+
+    if (result.ageGroups && result.ageGroups.length) {
+      drawHBarChart(
+        'ageChart',
+        result.ageGroups.map(function (a) { return a.label; }),
+        result.ageGroups.map(function (a) { return a.count; }),
+        '#10b981'
+      );
+    }
+
+    if (result.signupChannels && result.signupChannels.length) {
+      drawHBarChart(
+        'channelChart',
+        result.signupChannels.map(function (c) { return c.label; }),
+        result.signupChannels.map(function (c) { return c.count; }),
+        '#8b5cf6'
+      );
+    }
+  }
+
+  function onError(err) {
+    document.getElementById('status').innerHTML =
+      '⚠️ 데이터를 불러오지 못했습니다.<br><span style="font-size:12px;">' + err + '</span>';
+  }
+</script>
