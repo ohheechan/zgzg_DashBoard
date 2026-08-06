@@ -18,7 +18,7 @@
     </style>
   </head>
   <body>
-    <?!= include('Nav'); ?>
+    <?!= include('Nav', {activePage: activePage, baseUrl: baseUrl}); ?>
     <main>
       <?!= bodyContent; ?>
     </main>
