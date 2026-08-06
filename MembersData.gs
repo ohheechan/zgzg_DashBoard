@@ -30,6 +30,24 @@ function getMemberSheet_() {
   return sheet;
 }
 
+// 회원DB 시트에서 필요한 4개 컬럼을 한 번에 읽어옴 (여러 함수가 공유해서 씀)
+function readMemberRows_() {
+  const sheet = getMemberSheet_();
+  const lastRow = sheet.getLastRow();
+  const totalMembers = Math.max(0, lastRow - 1); // 헤더 행 제외
+
+  if (totalMembers === 0) {
+    return { totalMembers: 0, signupDates: [], genders: [], birthdates: [], signupChannels: [] };
+  }
+
+  const signupDates = sheet.getRange(2, MEMBER_COL.SIGNUP_DATE, totalMembers, 1).getValues();
+  const genders = sheet.getRange(2, MEMBER_COL.GENDER, totalMembers, 1).getValues();
+  const birthdates = sheet.getRange(2, MEMBER_COL.BIRTHDATE, totalMembers, 1).getValues();
+  const signupChannels = sheet.getRange(2, MEMBER_COL.SIGNUP_CHANNEL, totalMembers, 1).getValues();
+
+  return { totalMembers, signupDates, genders, birthdates, signupChannels };
+}
+
 function parseDate_(value) {
   if (!value) return null;
   if (value instanceof Date) {
@@ -60,12 +78,31 @@ function ageGroupOf_(birthDate, today) {
   return '50대 이상';
 }
 
+// 성별/연령대/가입경로 카운트를 보기 좋은 정렬된 리스트로 변환하는 공용 헬퍼
+function summarizeCounts_(genderCount, ageGroupCount, channelCount) {
+  const genderList = Object.keys(genderCount)
+    .map((k) => ({ label: k, count: genderCount[k] }))
+    .sort((a, b) => b.count - a.count);
+
+  const AGE_ORDER = ['10대 이하', '20대', '30대', '40대', '50대 이상', '미상'];
+  const ageGroupList = AGE_ORDER.filter((k) => ageGroupCount[k]).map((k) => ({
+    label: k,
+    count: ageGroupCount[k],
+  }));
+
+  const channelList = Object.keys(channelCount)
+    .map((k) => ({ label: k, count: channelCount[k] }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 8);
+
+  return { genderList, ageGroupList, channelList };
+}
+
 // 회원 리포트 페이지에서 클라이언트가 호출하는 진입점
 function fetchMembersData() {
   try {
-    const sheet = getMemberSheet_();
-    const lastRow = sheet.getLastRow();
-    const totalMembers = Math.max(0, lastRow - 1); // 헤더 행 제외
+    const rows = readMemberRows_();
+    const totalMembers = rows.totalMembers;
 
     if (totalMembers === 0) {
       return {
@@ -79,10 +116,7 @@ function fetchMembersData() {
       };
     }
 
-    const signupDates = sheet.getRange(2, MEMBER_COL.SIGNUP_DATE, totalMembers, 1).getValues();
-    const genders = sheet.getRange(2, MEMBER_COL.GENDER, totalMembers, 1).getValues();
-    const birthdates = sheet.getRange(2, MEMBER_COL.BIRTHDATE, totalMembers, 1).getValues();
-    const signupChannels = sheet.getRange(2, MEMBER_COL.SIGNUP_CHANNEL, totalMembers, 1).getValues();
+    const { signupDates, genders, birthdates, signupChannels } = rows;
 
     // 최근 30일 가입 추이 집계용 맵 초기화
     const today = new Date();
@@ -124,30 +158,89 @@ function fetchMembersData() {
       .sort()
       .map((date) => ({ date: date, count: trendMap[date] }));
 
-    const genderList = Object.keys(genderCount)
-      .map((k) => ({ label: k, count: genderCount[k] }))
-      .sort((a, b) => b.count - a.count);
-
-    const AGE_ORDER = ['10대 이하', '20대', '30대', '40대', '50대 이상', '미상'];
-    const ageGroupList = AGE_ORDER.filter((k) => ageGroupCount[k]).map((k) => ({
-      label: k,
-      count: ageGroupCount[k],
-    }));
-
-    const channelList = Object.keys(channelCount)
-      .map((k) => ({ label: k, count: channelCount[k] }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 8);
+    const summary = summarizeCounts_(genderCount, ageGroupCount, channelCount);
 
     return {
       ok: true,
       totalMembers: totalMembers,
       lastSignupAt: lastSignupAt ? formatDate_(lastSignupAt) : null,
       signupTrend: signupTrend,
-      genders: genderList,
-      ageGroups: ageGroupList,
-      signupChannels: channelList,
+      genders: summary.genderList,
+      ageGroups: summary.ageGroupList,
+      signupChannels: summary.channelList,
     };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+}
+
+// 최근 N일간 날짜별 실제 가입자 수 맵 반환 ({ 'YYYY-MM-DD': count, ... })
+// 개요 탭에서 GA4의 "새 사용자"(방문자 기준) 대신 실제 회원DB 가입 건수를 보여주기 위해 사용
+function getSignupCountsByDate_(days) {
+  const rows = readMemberRows_();
+  const trendMap = {};
+  const today = new Date();
+  const cursor = new Date(today);
+  const totalDays = days + 2; // GA4 쪽 날짜 범위(NdaysAgo~today, N+1일)를 넉넉히 덮도록 여유분 확보
+  cursor.setDate(cursor.getDate() - (totalDays - 1));
+  for (let i = 0; i < totalDays; i++) {
+    trendMap[formatDate_(cursor)] = 0;
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  for (let i = 0; i < rows.totalMembers; i++) {
+    const signupDate = parseDate_(rows.signupDates[i][0]);
+    if (!signupDate) continue;
+    const key = formatDate_(signupDate);
+    if (key in trendMap) trendMap[key] += 1;
+  }
+
+  return trendMap;
+}
+
+// 특정 날짜(YYYY-MM-DD)에 가입한 회원들의 성별/연령대/가입경로 분석
+function getMemberBreakdownForDate_(dateStr) {
+  const rows = readMemberRows_();
+  const genderCount = {};
+  const ageGroupCount = {};
+  const channelCount = {};
+  let count = 0;
+  const today = new Date();
+
+  for (let i = 0; i < rows.totalMembers; i++) {
+    const signupDate = parseDate_(rows.signupDates[i][0]);
+    if (!signupDate || formatDate_(signupDate) !== dateStr) continue;
+    count++;
+
+    const gender = String(rows.genders[i][0] || '').trim();
+    if (gender) genderCount[gender] = (genderCount[gender] || 0) + 1;
+
+    const birthDate = parseDate_(rows.birthdates[i][0]);
+    if (birthDate) {
+      const ageGroup = ageGroupOf_(birthDate, today);
+      ageGroupCount[ageGroup] = (ageGroupCount[ageGroup] || 0) + 1;
+    }
+
+    const channel = String(rows.signupChannels[i][0] || '').trim() || '기타';
+    channelCount[channel] = (channelCount[channel] || 0) + 1;
+  }
+
+  const summary = summarizeCounts_(genderCount, ageGroupCount, channelCount);
+
+  return {
+    ok: true,
+    date: dateStr,
+    count: count,
+    genders: summary.genderList,
+    ageGroups: summary.ageGroupList,
+    channels: summary.channelList,
+  };
+}
+
+// 개요 탭에서 특정 날짜 클릭 시 클라이언트가 호출하는 진입점
+function fetchMemberBreakdownForDate(dateStr) {
+  try {
+    return getMemberBreakdownForDate_(dateStr);
   } catch (err) {
     return { ok: false, error: String(err) };
   }
