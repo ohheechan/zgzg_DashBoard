@@ -37,9 +37,20 @@ function getDailyOverviewMetrics_(days) {
 }
 
 // 개요 페이지에서 클라이언트가 호출하는 진입점 (google.script.run으로 호출됨)
-function fetchOverviewData() {
+// days: 조회 기간(일). 방문자 수는 GA4, 신규 가입자 수는 회원DB 실제 가입 건수를 사용함
+// (예전에는 GA4의 "새 사용자" 지표를 썼는데, 이는 사이트 방문자 기준이라 실제 회원가입 수와 달랐음)
+function fetchOverviewData(days) {
   try {
-    const daily = getDailyOverviewMetrics_(14);
+    const d = days || 14;
+    const gaDaily = getDailyOverviewMetrics_(d);
+    const signupCounts = getSignupCountsByDate_(d);
+    const daily = gaDaily.map(function (row) {
+      return {
+        date: row.date,
+        activeUsers: row.activeUsers,
+        newSignups: signupCounts[row.date] !== undefined ? signupCounts[row.date] : 0,
+      };
+    });
     return { ok: true, daily: daily };
   } catch (err) {
     return { ok: false, error: String(err) };
