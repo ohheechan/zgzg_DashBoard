@@ -1,20 +1,79 @@
-<h1 style="margin-top:0;">개요</h1>
-<p style="color:#6b7280; margin-top:-8px;">최근 14일간 방문자 수 / 신규 가입자 수 추이</p>
+<div style="display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+  <div>
+    <h1 style="margin:0;">개요</h1>
+    <p style="color:#6b7280; margin-top:4px;" id="periodLabel">최근 14일간 방문자 수 / 신규 가입자 수 추이</p>
+  </div>
+  <select id="rangeSelect" style="padding:8px 12px; border:1px solid #d1d5db; border-radius:8px; font-size:14px; background:#fff; color:#111827;">
+    <option value="7">최근 7일</option>
+    <option value="14" selected>최근 14일</option>
+    <option value="30">최근 30일</option>
+    <option value="90">최근 90일</option>
+  </select>
+</div>
 
 <div id="status" style="color:#6b7280; padding: 40px 0; text-align:center;">데이터를 불러오는 중...</div>
-<div style="background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:20px; display:none;" id="chartWrap">
+<div style="background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:20px; display:none; position:relative;" id="chartWrap">
   <canvas id="overviewChart"></canvas>
+  <div id="ovTooltip" style="position:absolute; display:none; background:#111827; color:#fff; font-size:12px; padding:8px 10px; border-radius:6px; pointer-events:none; z-index:10; line-height:1.6; white-space:nowrap;"></div>
   <div style="display:flex; gap:20px; justify-content:center; margin-top:10px; font-size:13px; color:#374151;">
     <span><span style="display:inline-block; width:10px; height:10px; border-radius:2px; background:#2563eb; margin-right:6px;"></span>방문자 수 (활성 사용자)</span>
-    <span><span style="display:inline-block; width:10px; height:10px; border-radius:2px; background:#f97316; margin-right:6px;"></span>신규 가입자 수</span>
+    <span><span style="display:inline-block; width:10px; height:10px; border-radius:2px; background:#f97316; margin-right:6px;"></span>신규 가입자 수 (회원DB 기준)</span>
+  </div>
+  <p style="font-size:12px; color:#9ca3af; text-align:center; margin-top:8px; margin-bottom:0;">그래프의 특정 날짜를 클릭하면 그 날 가입한 회원의 성별/연령대/가입경로를 볼 수 있어요.</p>
+</div>
+
+<div id="detailPanel" style="display:none; margin-top:20px; background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:20px;">
+  <div style="display:flex; align-items:baseline; justify-content:space-between;">
+    <h3 id="detailTitle" style="margin:0; font-size:16px; color:#111827;"></h3>
+    <button id="detailClose" style="border:none; background:none; color:#6b7280; cursor:pointer; font-size:13px;">닫기 ✕</button>
+  </div>
+  <div id="detailStatus" style="color:#6b7280; padding:20px 0; text-align:center;">불러오는 중...</div>
+  <div id="detailContent" style="display:none; margin-top:8px;">
+    <div style="margin-bottom:12px; font-size:14px; color:#374151;">가입 회원수: <strong id="detailCount" style="color:#111827;">-</strong>명</div>
+    <div id="detailEmpty" style="display:none; color:#6b7280; padding:16px 0;">해당 날짜에 가입한 회원이 없습니다.</div>
+    <div id="detailCharts" style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:16px;">
+      <div style="background:#f9fafb; border:1px solid #e5e7eb; border-radius:10px; padding:14px;">
+        <h4 style="margin:0 0 8px; font-size:13px; color:#111827;">성별</h4>
+        <canvas id="ovGenderChart"></canvas>
+      </div>
+      <div style="background:#f9fafb; border:1px solid #e5e7eb; border-radius:10px; padding:14px;">
+        <h4 style="margin:0 0 8px; font-size:13px; color:#111827;">연령대</h4>
+        <canvas id="ovAgeChart"></canvas>
+      </div>
+      <div style="background:#f9fafb; border:1px solid #e5e7eb; border-radius:10px; padding:14px;">
+        <h4 style="margin:0 0 8px; font-size:13px; color:#111827;">가입경로</h4>
+        <canvas id="ovChannelChart"></canvas>
+      </div>
+    </div>
   </div>
 </div>
 
+<?!= include('Charts'); ?>
 <script>
-  google.script.run
-    .withSuccessHandler(onData)
-    .withFailureHandler(onError)
-    .fetchOverviewData();
+  var PALETTE = ['#2563eb', '#f97316', '#10b981', '#8b5cf6', '#ec4899', '#facc15', '#64748b'];
+  var chartState = null; // { points: [{x, date, activeUsers, newSignups}] } — hover/click 히트 테스트용
+
+  document.getElementById('rangeSelect').addEventListener('change', function (e) {
+    loadOverview(Number(e.target.value));
+  });
+
+  document.getElementById('detailClose').addEventListener('click', function () {
+    document.getElementById('detailPanel').style.display = 'none';
+  });
+
+  loadOverview(14);
+
+  function loadOverview(days) {
+    document.getElementById('status').style.display = 'block';
+    document.getElementById('status').textContent = '데이터를 불러오는 중...';
+    document.getElementById('chartWrap').style.display = 'none';
+    document.getElementById('periodLabel').textContent = '최근 ' + days + '일간 방문자 수 / 신규 가입자 수 추이';
+
+    google.script.run
+      .withSuccessHandler(onData)
+      .withFailureHandler(onError)
+      .fetchOverviewData(days);
+  }
 
   function onData(result) {
     var statusEl = document.getElementById('status');
@@ -24,7 +83,7 @@
     }
 
     if (!result.daily || result.daily.length === 0) {
-      statusEl.innerHTML = '최근 14일간 데이터가 없습니다.';
+      statusEl.innerHTML = '선택한 기간의 데이터가 없습니다.';
       return;
     }
 
@@ -32,6 +91,7 @@
     document.getElementById('chartWrap').style.display = 'block';
 
     drawLineChart('overviewChart', result.daily);
+    setupChartInteractivity();
   }
 
   // 외부 라이브러리 없이 <canvas>에 직접 그리는 가벼운 라인 차트
@@ -55,8 +115,8 @@
 
     var labels = daily.map(function (d) { return d.date.slice(5); }); // MM-DD
     var activeUsers = daily.map(function (d) { return d.activeUsers; });
-    var newUsers = daily.map(function (d) { return d.newUsers; });
-    var allValues = activeUsers.concat(newUsers);
+    var newSignups = daily.map(function (d) { return d.newSignups; });
+    var allValues = activeUsers.concat(newSignups);
     var maxVal = Math.max.apply(null, allValues.concat([1]));
     // y축 최대값을 보기 좋게 올림 (예: 583 -> 600)
     var niceMax = niceCeil(maxVal);
@@ -127,7 +187,14 @@
     }
 
     drawSeries(activeUsers, '#2563eb', 'rgba(37,99,235,0.08)');
-    drawSeries(newUsers, '#f97316', 'rgba(249,115,22,0.08)');
+    drawSeries(newSignups, '#f97316', 'rgba(249,115,22,0.08)');
+
+    // hover/click 히트 테스트를 위한 포인트 좌표 저장 (CSS 픽셀 기준, ctx.scale 이전 좌표계와 동일)
+    chartState = {
+      points: daily.map(function (d, i) {
+        return { x: x(i), date: d.date, activeUsers: d.activeUsers, newSignups: d.newSignups };
+      }),
+    };
   }
 
   function niceCeil(value) {
@@ -136,6 +203,122 @@
     var normalized = value / magnitude;
     var niceNormalized = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
     return niceNormalized * magnitude;
+  }
+
+  var interactivityBound = false;
+  function setupChartInteractivity() {
+    if (interactivityBound) return; // 리스너는 한 번만 등록 (기간 변경 시 재등록 방지, chartState는 매 draw마다 갱신됨)
+    interactivityBound = true;
+
+    var canvas = document.getElementById('overviewChart');
+    var tooltip = document.getElementById('ovTooltip');
+    canvas.style.cursor = 'pointer';
+
+    function nearestPoint(mx) {
+      if (!chartState || !chartState.points.length) return null;
+      var pts = chartState.points;
+      var best = pts[0];
+      var bestDist = Math.abs(pts[0].x - mx);
+      for (var i = 1; i < pts.length; i++) {
+        var d = Math.abs(pts[i].x - mx);
+        if (d < bestDist) {
+          bestDist = d;
+          best = pts[i];
+        }
+      }
+      return best;
+    }
+
+    canvas.addEventListener('mousemove', function (e) {
+      var rect = canvas.getBoundingClientRect();
+      var mx = e.clientX - rect.left;
+      var nearest = nearestPoint(mx);
+      if (!nearest) return;
+      tooltip.style.display = 'block';
+      var left = Math.min(Math.max(nearest.x + 12, 0), rect.width - 170);
+      tooltip.style.left = left + 'px';
+      tooltip.style.top = '8px';
+      tooltip.innerHTML =
+        '<div style="font-weight:600;">' + nearest.date + '</div>' +
+        '<div>방문자 수: ' + formatNumber(nearest.activeUsers) + '</div>' +
+        '<div>신규 가입자 수: ' + formatNumber(nearest.newSignups) + '</div>';
+    });
+
+    canvas.addEventListener('mouseleave', function () {
+      tooltip.style.display = 'none';
+    });
+
+    canvas.addEventListener('click', function (e) {
+      var rect = canvas.getBoundingClientRect();
+      var mx = e.clientX - rect.left;
+      var nearest = nearestPoint(mx);
+      if (!nearest) return;
+      loadDateDetail(nearest.date);
+    });
+  }
+
+  function loadDateDetail(dateStr) {
+    document.getElementById('detailPanel').style.display = 'block';
+    document.getElementById('detailTitle').textContent = dateStr + ' 가입 회원 상세';
+    document.getElementById('detailStatus').style.display = 'block';
+    document.getElementById('detailStatus').textContent = '불러오는 중...';
+    document.getElementById('detailContent').style.display = 'none';
+
+    google.script.run
+      .withSuccessHandler(onDetailData)
+      .withFailureHandler(onDetailError)
+      .fetchMemberBreakdownForDate(dateStr);
+  }
+
+  function onDetailData(result) {
+    if (!result.ok) {
+      onDetailError(result.error);
+      return;
+    }
+    document.getElementById('detailStatus').style.display = 'none';
+    document.getElementById('detailContent').style.display = 'block';
+    document.getElementById('detailCount').textContent = formatNumber(result.count);
+
+    var emptyEl = document.getElementById('detailEmpty');
+    var chartsEl = document.getElementById('detailCharts');
+
+    if (!result.count) {
+      emptyEl.style.display = 'block';
+      chartsEl.style.display = 'none';
+      return;
+    }
+    emptyEl.style.display = 'none';
+    chartsEl.style.display = 'grid';
+
+    if (result.genders && result.genders.length) {
+      drawDonutChart(
+        'ovGenderChart',
+        result.genders.map(function (g) { return g.label; }),
+        result.genders.map(function (g) { return g.count; }),
+        PALETTE
+      );
+    }
+    if (result.ageGroups && result.ageGroups.length) {
+      drawHBarChart(
+        'ovAgeChart',
+        result.ageGroups.map(function (a) { return a.label; }),
+        result.ageGroups.map(function (a) { return a.count; }),
+        '#10b981'
+      );
+    }
+    if (result.channels && result.channels.length) {
+      drawHBarChart(
+        'ovChannelChart',
+        result.channels.map(function (c) { return c.label; }),
+        result.channels.map(function (c) { return c.count; }),
+        '#8b5cf6'
+      );
+    }
+  }
+
+  function onDetailError(err) {
+    document.getElementById('detailStatus').innerHTML =
+      '⚠️ 상세 데이터를 불러오지 못했습니다.<br><span style="font-size:12px;">' + err + '</span>';
   }
 
   function onError(err) {
