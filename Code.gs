@@ -26,11 +26,11 @@ function renderPageContent_(page) {
     case 'overview':
       return HtmlService.createTemplateFromFile('Overview').evaluate().getContent();
     case 'traffic':
-      return HtmlService.createTemplateFromFile('ComingSoon').evaluate().getContent();
+      return HtmlService.createTemplateFromFile('Traffic').evaluate().getContent();
     case 'members':
-      return HtmlService.createTemplateFromFile('ComingSoon').evaluate().getContent();
+      return HtmlService.createTemplateFromFile('Members').evaluate().getContent();
     case 'urlfilter':
-      return HtmlService.createTemplateFromFile('ComingSoon').evaluate().getContent();
+      return HtmlService.createTemplateFromFile('UrlFilter').evaluate().getContent();
     default:
       return '<p>페이지를 찾을 수 없습니다.</p>';
   }
