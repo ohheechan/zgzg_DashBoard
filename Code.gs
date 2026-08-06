@@ -10,6 +10,7 @@ function doGet(e) {
 
   const template = HtmlService.createTemplateFromFile('Layout');
   template.activePage = safePage;
+  template.baseUrl = ScriptApp.getService().getUrl();
   template.bodyContent = renderPageContent_(safePage);
 
   return template
@@ -35,7 +36,14 @@ function renderPageContent_(page) {
   }
 }
 
-// HTML 파일 안에서 다른 HTML 파일을 include할 때 사용 (예: <?!= include('Nav'); ?>)
-function include(filename) {
-  return HtmlService.createHtmlOutputFromFile(filename).getContent();
+// HTML 파일 안에서 다른 HTML 파일을 include할 때 사용 (예: <?!= include('Nav', {activePage: activePage, baseUrl: baseUrl}); ?>)
+// data로 넘긴 값들은 include되는 파일 안에서도 <?= ?> 스크립틀릿으로 그대로 쓸 수 있음
+function include(filename, data) {
+  const tmpl = HtmlService.createTemplateFromFile(filename);
+  if (data) {
+    Object.keys(data).forEach(function (key) {
+      tmpl[key] = data[key];
+    });
+  }
+  return tmpl.evaluate().getContent();
 }
