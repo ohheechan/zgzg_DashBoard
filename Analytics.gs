@@ -45,3 +45,140 @@ function fetchOverviewData() {
     return { ok: false, error: String(err) };
   }
 }
+
+// 최근 N일간 채널그룹별 세션수 (내림차순)
+function getChannelBreakdown_(days) {
+  const request = {
+    dateRanges: [{ startDate: `${days}daysAgo`, endDate: 'today' }],
+    dimensions: [{ name: 'sessionDefaultChannelGroup' }],
+    metrics: [{ name: 'sessions' }],
+    orderBys: [{ metric: { metricName: 'sessions' }, desc: true }],
+  };
+  const response = AnalyticsData.Properties.runReport(request, `properties/${CONFIG.GA4_PROPERTY_ID}`);
+  if (!response.rows) return [];
+  return response.rows.map((row) => ({
+    channel: row.dimensionValues[0].value,
+    sessions: Number(row.metricValues[0].value),
+  }));
+}
+
+// 최근 N일간 디바이스 카테고리별 세션수 (내림차순)
+function getDeviceBreakdown_(days) {
+  const request = {
+    dateRanges: [{ startDate: `${days}daysAgo`, endDate: 'today' }],
+    dimensions: [{ name: 'deviceCategory' }],
+    metrics: [{ name: 'sessions' }],
+    orderBys: [{ metric: { metricName: 'sessions' }, desc: true }],
+  };
+  const response = AnalyticsData.Properties.runReport(request, `properties/${CONFIG.GA4_PROPERTY_ID}`);
+  if (!response.rows) return [];
+  return response.rows.map((row) => ({
+    device: row.dimensionValues[0].value,
+    sessions: Number(row.metricValues[0].value),
+  }));
+}
+
+// 최근 N일간 인기 페이지 TOP limit (조회수 기준)
+function getTopPages_(days, limit) {
+  const request = {
+    dateRanges: [{ startDate: `${days}daysAgo`, endDate: 'today' }],
+    dimensions: [{ name: 'pagePath' }],
+    metrics: [{ name: 'screenPageViews' }],
+    orderBys: [{ metric: { metricName: 'screenPageViews' }, desc: true }],
+    limit: limit,
+  };
+  const response = AnalyticsData.Properties.runReport(request, `properties/${CONFIG.GA4_PROPERTY_ID}`);
+  if (!response.rows) return [];
+  return response.rows.map((row) => ({
+    path: row.dimensionValues[0].value,
+    views: Number(row.metricValues[0].value),
+  }));
+}
+
+// 트래픽 리포트 페이지에서 클라이언트가 호출하는 진입점
+function fetchTrafficData() {
+  try {
+    return {
+      ok: true,
+      channels: getChannelBreakdown_(14),
+      devices: getDeviceBreakdown_(14),
+      topPages: getTopPages_(14, 10),
+    };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+}
+
+// 입력값이 전체 URL(https://...)이면 경로만 남기고, 아니면 그대로 사용
+function normalizeUrlPath_(input) {
+  let path = String(input || '').trim();
+  if (/^https?:\/\//i.test(path)) {
+    const withoutProtocol = path.replace(/^https?:\/\//i, '');
+    const firstSlash = withoutProtocol.indexOf('/');
+    path = firstSlash === -1 ? '/' : withoutProtocol.slice(firstSlash);
+  }
+  if (!path.startsWith('/')) path = '/' + path;
+  return path;
+}
+
+// 특정 landingPage(유입 경로) 기준 요약 지표 (세션수/신규사용자수/조회수)
+function getUrlFilterSummary_(path, days) {
+  const request = {
+    dateRanges: [{ startDate: `${days}daysAgo`, endDate: 'today' }],
+    dimensions: [{ name: 'landingPage' }],
+    metrics: [{ name: 'sessions' }, { name: 'newUsers' }, { name: 'screenPageViews' }],
+    dimensionFilter: {
+      filter: {
+        fieldName: 'landingPage',
+        stringFilter: { matchType: 'EXACT', value: path },
+      },
+    },
+  };
+  const response = AnalyticsData.Properties.runReport(request, `properties/${CONFIG.GA4_PROPERTY_ID}`);
+  if (!response.rows || !response.rows.length) {
+    return { sessions: 0, newUsers: 0, views: 0 };
+  }
+  const row = response.rows[0];
+  return {
+    sessions: Number(row.metricValues[0].value),
+    newUsers: Number(row.metricValues[1].value),
+    views: Number(row.metricValues[2].value),
+  };
+}
+
+// 특정 landingPage(유입 경로) 기준 유입 채널 분석
+function getUrlFilterChannels_(path, days) {
+  const request = {
+    dateRanges: [{ startDate: `${days}daysAgo`, endDate: 'today' }],
+    dimensions: [{ name: 'sessionDefaultChannelGroup' }],
+    metrics: [{ name: 'sessions' }],
+    dimensionFilter: {
+      filter: {
+        fieldName: 'landingPage',
+        stringFilter: { matchType: 'EXACT', value: path },
+      },
+    },
+    orderBys: [{ metric: { metricName: 'sessions' }, desc: true }],
+  };
+  const response = AnalyticsData.Properties.runReport(request, `properties/${CONFIG.GA4_PROPERTY_ID}`);
+  if (!response.rows) return [];
+  return response.rows.map((row) => ({
+    channel: row.dimensionValues[0].value,
+    sessions: Number(row.metricValues[0].value),
+  }));
+}
+
+// URL 필터 페이지에서 클라이언트가 호출하는 진입점
+function fetchUrlFilterData(urlInput, days) {
+  try {
+    const path = normalizeUrlPath_(urlInput);
+    return {
+      ok: true,
+      path: path,
+      summary: getUrlFilterSummary_(path, days || 14),
+      channels: getUrlFilterChannels_(path, days || 14),
+    };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+}
