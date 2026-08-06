@@ -59,6 +59,65 @@ function getDailyOverviewMetrics_(days) {
   });
 }
 
+// 사용자 지정 기간(시작일~종료일, 둘 다 포함)의 일자별 방문자수/신규가입자수
+// startDate/endDate는 'YYYY-MM-DD' 형식 문자열. GA4 Data API는 상대 표현(NdaysAgo)뿐 아니라
+// 이런 리터럴 날짜도 그대로 받아들임.
+function getDailyOverviewMetricsForRange_(startDate, endDate) {
+  if (!CONFIG.GA4_PROPERTY_ID || CONFIG.GA4_PROPERTY_ID.indexOf('TODO') === 0) {
+    throw new Error('GA4_PROPERTY_ID가 설정되지 않았습니다. Config.gs를 확인하세요.');
+  }
+
+  return withGa4Cache_('gaRange_' + startDate + '_' + endDate, 120, function () {
+    const request = {
+      dateRanges: [{ startDate: startDate, endDate: endDate }],
+      dimensions: [{ name: 'date' }],
+      metrics: [{ name: 'activeUsers' }, { name: 'newUsers' }],
+      orderBys: [{ dimension: { dimensionName: 'date' } }],
+    };
+
+    const response = AnalyticsData.Properties.runReport(
+      request,
+      `properties/${CONFIG.GA4_PROPERTY_ID}`
+    );
+
+    if (!response.rows) return [];
+
+    return response.rows.map((row) => {
+      const rawDate = row.dimensionValues[0].value; // YYYYMMDD
+      const formatted = `${rawDate.slice(0, 4)}-${rawDate.slice(4, 6)}-${rawDate.slice(6, 8)}`;
+      return {
+        date: formatted,
+        activeUsers: Number(row.metricValues[0].value),
+        newUsers: Number(row.metricValues[1].value),
+      };
+    });
+  });
+}
+
+// 개요 페이지 - 사용자 지정 기간 조회 진입점 (google.script.run으로 호출됨)
+function fetchOverviewDataForRange(startDate, endDate) {
+  try {
+    if (!startDate || !endDate) {
+      throw new Error('시작일과 종료일을 모두 지정해야 합니다.');
+    }
+    if (startDate > endDate) {
+      throw new Error('시작일은 종료일보다 이전이어야 합니다.');
+    }
+    const gaDaily = getDailyOverviewMetricsForRange_(startDate, endDate);
+    const signupCounts = getSignupCountsForDateRange_(startDate, endDate);
+    const daily = gaDaily.map(function (row) {
+      return {
+        date: row.date,
+        activeUsers: row.activeUsers,
+        newSignups: signupCounts[row.date] !== undefined ? signupCounts[row.date] : 0,
+      };
+    });
+    return { ok: true, daily: daily };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+}
+
 // 개요 페이지에서 클라이언트가 호출하는 진입점 (google.script.run으로 호출됨)
 // days: 조회 기간(일). 방문자 수는 GA4, 신규 가입자 수는 회원DB 실제 가입 건수를 사용함
 // (예전에는 GA4의 "새 사용자" 지표를 썼는데, 이는 사이트 방문자 기준이라 실제 회원가입 수와 달랐음)
