@@ -24,12 +24,22 @@
     ctx.closePath();
   }
 
+  // 부모 요소의 padding을 제외한 실제 사용 가능한 너비를 계산.
+  // parentElement.clientWidth는 부모의 padding까지 포함한 값이라, 그대로 캔버스 너비로 쓰면
+  // 캔버스가 카드 오른쪽 테두리 밖으로 삐져나감 (개요 탭 "가입 회원 상세" 패널에서 확인된 오버플로우 원인).
+  function getContentWidth_(canvas) {
+    var parentEl = canvas.parentElement;
+    var parentStyle = window.getComputedStyle(parentEl);
+    var parentPaddingX = (parseFloat(parentStyle.paddingLeft) || 0) + (parseFloat(parentStyle.paddingRight) || 0);
+    return Math.max(0, parentEl.clientWidth - parentPaddingX);
+  }
+
   // 가로 막대 차트: labels/values 배열 (순서 그대로 위에서부터 표시)
   function drawHBarChart(canvasId, labels, values, color) {
     var canvas = document.getElementById(canvasId);
     if (!canvas || !labels.length) return;
     var dpr = window.devicePixelRatio || 1;
-    var cssWidth = canvas.parentElement.clientWidth;
+    var cssWidth = getContentWidth_(canvas);
     var barHeight = 26;
     var barGap = 12;
     var cssHeight = labels.length * (barHeight + barGap) + barGap;
@@ -74,7 +84,7 @@
     var canvas = document.getElementById(canvasId);
     if (!canvas || !labels.length) return;
     var dpr = window.devicePixelRatio || 1;
-    var cssWidth = canvas.parentElement.clientWidth;
+    var cssWidth = getContentWidth_(canvas);
     var cssHeight = 220;
     canvas.style.width = cssWidth + 'px';
     canvas.style.height = cssHeight + 'px';
@@ -144,7 +154,7 @@
     var canvas = document.getElementById(canvasId);
     if (!canvas || !labels.length) return;
     var dpr = window.devicePixelRatio || 1;
-    var cssWidth = canvas.parentElement.clientWidth;
+    var cssWidth = getContentWidth_(canvas);
     var cssHeight = 200;
     canvas.style.width = cssWidth + 'px';
     canvas.style.height = cssHeight + 'px';
