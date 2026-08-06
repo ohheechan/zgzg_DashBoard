@@ -4,6 +4,27 @@
  * https://developers.google.com/apps-script/advanced/analyticsdata
  *************************************************/
 
+// GA4 응답을 짧게 캐싱해서, 기간 드롭다운을 반복 전환할 때마다 매번 GA4 API를 새로 호출하지
+// 않도록 함 (GA4 데이터는 실시간이 아니라 어차피 하루 단위로 갱신되므로 몇 분 캐싱은 안전함)
+function withGa4Cache_(cacheKey, ttlSeconds, fetcher) {
+  const cache = CacheService.getScriptCache();
+  const cached = cache.get(cacheKey);
+  if (cached) {
+    try {
+      return JSON.parse(cached);
+    } catch (e) {
+      // 캐시 손상 시 무시하고 새로 조회
+    }
+  }
+  const result = fetcher();
+  try {
+    cache.put(cacheKey, JSON.stringify(result), ttlSeconds);
+  } catch (e) {
+    // 캐시 저장 실패는 무시 - 다음 요청에서 다시 조회하면 됨
+  }
+  return result;
+}
+
 // 최근 N일간 일자별 방문자수/신규가입자수(=신규 사용자수)를 배열로 반환
 // 반환 형식: [{date:'2026-07-30', activeUsers: 123, newUsers: 45}, ...]
 function getDailyOverviewMetrics_(days) {
@@ -11,28 +32,30 @@ function getDailyOverviewMetrics_(days) {
     throw new Error('GA4_PROPERTY_ID가 설정되지 않았습니다. Config.gs를 확인하세요.');
   }
 
-  const request = {
-    dateRanges: [{ startDate: `${days}daysAgo`, endDate: 'today' }],
-    dimensions: [{ name: 'date' }],
-    metrics: [{ name: 'activeUsers' }, { name: 'newUsers' }],
-    orderBys: [{ dimension: { dimensionName: 'date' } }],
-  };
-
-  const response = AnalyticsData.Properties.runReport(
-    request,
-    `properties/${CONFIG.GA4_PROPERTY_ID}`
-  );
-
-  if (!response.rows) return [];
-
-  return response.rows.map((row) => {
-    const rawDate = row.dimensionValues[0].value; // YYYYMMDD
-    const formatted = `${rawDate.slice(0, 4)}-${rawDate.slice(4, 6)}-${rawDate.slice(6, 8)}`;
-    return {
-      date: formatted,
-      activeUsers: Number(row.metricValues[0].value),
-      newUsers: Number(row.metricValues[1].value),
+  return withGa4Cache_('gaDaily_' + days, 120, function () {
+    const request = {
+      dateRanges: [{ startDate: `${days}daysAgo`, endDate: 'today' }],
+      dimensions: [{ name: 'date' }],
+      metrics: [{ name: 'activeUsers' }, { name: 'newUsers' }],
+      orderBys: [{ dimension: { dimensionName: 'date' } }],
     };
+
+    const response = AnalyticsData.Properties.runReport(
+      request,
+      `properties/${CONFIG.GA4_PROPERTY_ID}`
+    );
+
+    if (!response.rows) return [];
+
+    return response.rows.map((row) => {
+      const rawDate = row.dimensionValues[0].value; // YYYYMMDD
+      const formatted = `${rawDate.slice(0, 4)}-${rawDate.slice(4, 6)}-${rawDate.slice(6, 8)}`;
+      return {
+        date: formatted,
+        activeUsers: Number(row.metricValues[0].value),
+        newUsers: Number(row.metricValues[1].value),
+      };
+    });
   });
 }
 
