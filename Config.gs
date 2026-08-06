@@ -6,7 +6,8 @@
  *************************************************/
 const CONFIG = {
   GA4_PROPERTY_ID: '339658077',
-  MEMBER_SPREADSHEET_ID: 'TODO_회원_시트_ID_입력',
+  MEMBER_SPREADSHEET_ID: '1xUCzAH9yczlYVH0eWs_5Xr1ioWhr5P0xfdxFHRy0VgU',
+  MEMBER_SHEET_NAME: 'Members',
   SITE_NAME: '지글지글클럽 대시보드',
   TIMEZONE: 'Asia/Seoul',
 };
